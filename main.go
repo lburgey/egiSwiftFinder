@@ -548,13 +548,20 @@ func getSite(c *config) (s *site, err error) {
 	}
 
 	sites := c.GetSwiftSitesForVO()
-	if len(sites) == 0 {
+	siteCount := len(sites)
+	if siteCount == 0 {
 		err = fmt.Errorf("no sites provide swift for the selected VO")
 		return
 	}
 
-	fmt.Println("Select a site:")
-	siteName := selectString(sites)
+	var siteName string
+	if siteCount == 1 {
+		siteName = sites[0]
+		fmt.Printf("Found one site providing swift: %s\n", siteName)
+	} else {
+		fmt.Printf("Found %d sites providing swift. Choose one:\n", siteCount)
+		siteName = selectString(sites)
+	}
 	s = c.GetSiteByName(siteName)
 	if s == nil {
 		err = fmt.Errorf("invalid choice: '%s'", siteName)
