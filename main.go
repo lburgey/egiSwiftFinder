@@ -612,6 +612,6 @@ func main() {
 	kingpin.Parse()
 	err := run()
 	if err != nil {
-		fmt.Printf("Error: %s", err)
+		fmt.Printf("Error: %s\n", err)
 	}
 }

@@ -8,6 +8,10 @@ github.com/c-bata/go-prompt v0.2.6 h1:POP+nrHE+DfLYx370bedwNhsqmpCUynWPxuHi0C5vZ
 github.com/c-bata/go-prompt v0.2.6/go.mod h1:/LMAke8wD2FsNu9EXNdHxNLbd9MedkPnCdfpU9wwHfY=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/indigo-dc/liboidcagent-go v0.2.0 h1:2O8LAK0JLaNUSb24bzpdnTIopH/kqJWzhH76YlBUXBw=
+github.com/indigo-dc/liboidcagent-go v0.2.0/go.mod h1:siRPRA7ZK9LeEpzsaeOH5XJBuhHEMN1IQWcCbjNLklI=
+github.com/indigo-dc/liboidcagent-go v0.3.0 h1:sz7BkmMOxas8LPwbSLtBFDWapNYfwI56Tjk9o8I3/Sc=
+github.com/indigo-dc/liboidcagent-go v0.3.0/go.mod h1:yhFj0IOmAoHpDJvyhZLGsRMFVpPSw/r+0UDafZpiUVI=
 github.com/jpillora/longestcommon v0.0.0-20161227235612-adb9d91ee629 h1:1dSBUfGlorLAua2CRx0zFN7kQsTpE2DQSmr7rrTNgY8=
 github.com/jpillora/longestcommon v0.0.0-20161227235612-adb9d91ee629/go.mod h1:mb5nS4uRANwOJSZj8rlCWAfAcGi72GGMIXx+xGOjA7M=
 github.com/mattn/go-colorable v0.1.4/go.mod h1:U0ppj6V5qS13XJ6of8GYAs25YV2eR4EVcfRqFIhoBtE=
