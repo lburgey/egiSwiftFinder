@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"sort"
 	"strings"
 
@@ -9,7 +11,16 @@ import (
 	"github.com/jpillora/longestcommon"
 )
 
+// go-prompt eats Ctrl+C if we don't do this, see: https://github.com/c-bata/go-prompt/issues/228#issuecomment-820639887
+func fixTTY() {
+	rawModeOff := exec.Command("/bin/stty", "-raw", "echo")
+	rawModeOff.Stdin = os.Stdin
+	_ = rawModeOff.Run()
+	rawModeOff.Wait()
+}
+
 func selectString(choices []string) string {
+	defer fixTTY()
 	if len(choices) == 0 {
 		return ""
 	}

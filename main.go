@@ -2,12 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"sync"
@@ -19,40 +19,48 @@ import (
 )
 
 const (
-	DefaultConfigURL = "https://raw.githubusercontent.com/tdviet/fedcloudclient/master/config/sites.yaml"
-	GOCDBPublicURL   = "https://goc.egi.eu/gocdbpi/public/"
+	defaultTimeout   = 3 * time.Second
+	defaultConfigURL = "https://raw.githubusercontent.com/tdviet/fedcloudclient/master/config/sites.yaml"
+	gocdbPublicURL   = "https://goc.egi.eu/gocdbpi/public/"
+
+	// endpointType which we search at the sites
+	endpointType = "object-store"
 )
 
 var (
-	argOIDCAgentAccount = kingpin.Flag("oidc-agent", "oidc-agent account shortname").Short('o').Envar("OIDC_AGENT_ACCOUNT").String()
-	argVO               = kingpin.Flag("vo", "virtual organisation to use").Short('v').Envar("EGI_VO").String()
-	argSite             = kingpin.Flag("site", "Site").Short('s').Envar("EGI_SITE").String()
+	defaultCtx, defCancel = context.WithCancel(context.Background())
+	argOIDCAgentAccount   = kingpin.Flag("oidc-agent", "oidc-agent account shortname").Short('o').Envar("OIDC_AGENT_ACCOUNT").String()
+	argVO                 = kingpin.Flag("vo", "Virtual organisation").Short('v').Envar("EGI_VO").String()
+	argSite               = kingpin.Flag("site", "Site").Short('s').Envar("EGI_SITE").String()
 )
 
-type UserInfo struct {
+type userInfo struct {
 	Entitlements []string `json:"eduperson_entitlement"`
 }
 
-type Config struct {
+type config struct {
 	AccessToken string
 	Issuer      string
 	VO          string
-	Sites       []*Site
+	Sites       []*site
 }
 
-type Site struct {
-	Config *SiteConfig
-	Auth   *SiteAuth
+// site describe a site which may provide our service
+// Config is populated in (*Config).Fetch()
+// Auth is populated in when successfully calling (*site).Authenticate()
+type site struct {
+	Config *siteConfig
+	Auth   *siteAuth
 }
 
-func (s *Site) String() (name string) {
+func (s *site) String() (name string) {
 	if s != nil {
 		return s.Config.Name
 	}
 	return
 }
 
-type SiteConfig struct {
+type siteConfig struct {
 	Name     string `yaml:"gocdb"`
 	Endpoint string `yaml:"endpoint"`
 	VOs      []struct {
@@ -63,21 +71,22 @@ type SiteConfig struct {
 	} `yaml:"vos"`
 }
 
-type SiteAuth struct {
+type siteAuth struct {
 	UnscopedToken     string
-	Token             Token
-	SwiftCatalogEntry *CatalogEntry
-	SwiftEndpoint     *Endpoint
+	ScopedToken       string
+	TokenInfo         tokenInfo
+	SwiftCatalogEntry *catalogEntry
+	SwiftEndpoint     *endpoint
 }
 
-type CatalogEntry struct {
+type catalogEntry struct {
 	Type      string     `json:"type"`
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
-	Endpoints []Endpoint `json:"endpoints"`
+	Endpoints []endpoint `json:"endpoints"`
 }
 
-type Endpoint struct {
+type endpoint struct {
 	URL       string `json:"url"`
 	Interface string `json:"interface"`
 	Region    string `json:"region"`
@@ -85,20 +94,22 @@ type Endpoint struct {
 	ID        string `json:"id"`
 }
 
-// AuthResponse to calls no /v3/auth/tokens
-type AuthResponse struct {
-	Token *Token `json:"token"`
+// authResponse to calls no /v3/auth/tokens
+type authResponse struct {
+	Token *tokenInfo `json:"token"`
 }
 
-type Token struct {
+// tokenInfo binds *some* of the fields of the auth response
+// we don't need all the details here
+type tokenInfo struct {
 	AuditIDs  []string       `json:"audit_ids"`
 	IssuedAt  *time.Time     `json:"issued_at"`
 	ExpiresAt *time.Time     `json:"expires_at"`
-	Catalog   []CatalogEntry `json:"catalog"`
-	User      *TokenUser     `json:"user"`
+	Catalog   []catalogEntry `json:"catalog"`
+	User      *tokenUser     `json:"user"`
 }
 
-type TokenUser struct {
+type tokenUser struct {
 	OSFederation struct {
 		IdentityProvider struct {
 			ID string `json:"id"`
@@ -119,7 +130,7 @@ type TokenUser struct {
 }
 
 func fetchConfigPaths() (configPaths []string, err error) {
-	resp, err := http.Get(DefaultConfigURL)
+	resp, err := http.Get(defaultConfigURL)
 	if err != nil {
 		return nil, err
 	}
@@ -133,9 +144,16 @@ func fetchConfigPaths() (configPaths []string, err error) {
 	return
 }
 
-func fetchSiteConfig(path string) (config *SiteConfig, err error) {
-	var resp *http.Response
-	resp, err = http.Get(path)
+func fetchSiteConfig(ctx context.Context, path string) (config *siteConfig, err error) {
+	var (
+		req  *http.Request
+		resp *http.Response
+	)
+	req, err = http.NewRequestWithContext(ctx, "GET", path, nil)
+	if err != nil {
+		return
+	}
+	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		return
 	}
@@ -144,7 +162,7 @@ func fetchSiteConfig(path string) (config *SiteConfig, err error) {
 	if err != nil {
 		return
 	}
-	config = new(SiteConfig)
+	config = new(siteConfig)
 	err = yaml.Unmarshal(bodyBytes, config)
 	if err != nil {
 		return
@@ -153,23 +171,25 @@ func fetchSiteConfig(path string) (config *SiteConfig, err error) {
 	return
 }
 
-func (c *Config) Fetch() (err error) {
-	// fmt.Println("Fetching site configurations")
+func (c *config) Fetch() (err error) {
+	ctx, cancel := context.WithTimeout(defaultCtx, defaultTimeout)
+	defer cancel()
+
 	var configPaths []string
 	configPaths, err = fetchConfigPaths()
 	if err != nil {
 		return
 	}
 
-	c.Sites = make([]*Site, len(configPaths))
+	c.Sites = make([]*site, len(configPaths))
 
 	wg := sync.WaitGroup{}
 	wg.Add(len(configPaths))
 	for i, path := range configPaths {
-		c.Sites[i] = new(Site)
+		c.Sites[i] = new(site)
 		go func(i int, path string) {
-			var config *SiteConfig
-			config, err = fetchSiteConfig(path)
+			var config *siteConfig
+			config, err = fetchSiteConfig(ctx, path)
 			if err == nil {
 				c.Sites[i].Config = config
 			} else {
@@ -223,13 +243,16 @@ func getAT() (at string, issuer string, err error) {
 	return
 }
 
-func getUserInfo(c *Config) (ui UserInfo, err error) {
+func getUserInfo(c *config) (ui userInfo, err error) {
+	ctx, cancel := context.WithTimeout(defaultCtx, defaultTimeout)
+	defer cancel()
+
 	var req *http.Request
-	req, err = http.NewRequest("GET", c.Issuer+"/userinfo", nil) // TODO look this up in the well known config
+	req, err = http.NewRequestWithContext(ctx, "GET", c.Issuer+"/userinfo", nil) // TODO look this up in the well known config
 	if err != nil {
 		return
 	}
-	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.AccessToken))
+	req.Header.Add("Authorization", "Bearer "+c.AccessToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return
@@ -238,7 +261,7 @@ func getUserInfo(c *Config) (ui UserInfo, err error) {
 	if err != nil {
 		return
 	}
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		err = fmt.Errorf("user info request: %v - %s", resp.Status, bodyBytes)
 		return
 	}
@@ -246,7 +269,7 @@ func getUserInfo(c *Config) (ui UserInfo, err error) {
 	return
 }
 
-func getVO(userinfo UserInfo) (vo string, err error) {
+func getVO(userinfo userInfo) (vo string, err error) {
 	if *argVO != "" {
 		vo = *argVO
 		fmt.Printf("Using VO: %s\n", vo)
@@ -258,13 +281,13 @@ func getVO(userinfo UserInfo) (vo string, err error) {
 	return
 }
 
-func (c *Config) SetUserAuth() (err error) {
+func (c *config) SetUserAuth() (err error) {
 	c.AccessToken, c.Issuer, err = getAT()
 	if err != nil {
 		return
 	}
 
-	var userinfo UserInfo
+	var userinfo userInfo
 	userinfo, err = getUserInfo(c)
 	if err != nil {
 		return
@@ -274,54 +297,53 @@ func (c *Config) SetUserAuth() (err error) {
 	return
 }
 
-func (c *Config) GetSiteByName(name string) (site *Site) {
+func (c *config) GetSiteByName(name string) *site {
 	for _, s := range c.Sites {
 		if s.Config.Name == name {
-			site = s
-			return
+			return s
 		}
 	}
-	return
+	return nil
 }
 
-func (c *Config) GetSwiftSitesForVO() (sites []string) {
+func (c *config) GetSwiftSitesForVO() (sites []string) {
 	sites = []string{}
-	pos := make(chan string)
+	swiftSites := make(chan string)
 
 	wg := sync.WaitGroup{}
 	wg.Add(len(c.Sites))
 
 	go func() {
 		for {
-			site, ok := <-pos
+			swiftSite, ok := <-swiftSites
 			if !ok {
 				break
 			}
-			sites = append(sites, site)
+			sites = append(sites, swiftSite)
 		}
 	}()
 
-	for _, site := range c.Sites {
-		go func(s *Site) {
-			if s.HasAvailableSwiftEndpoint(c) {
-				pos <- s.Config.Name
+	for _, s := range c.Sites {
+		go func(s *site) {
+			if s.hasAvailableSwiftEndpoint(c) {
+				swiftSites <- s.Config.Name
 			}
 			wg.Done()
-		}(site)
+		}(s)
 	}
 	wg.Wait()
-	close(pos)
+	close(swiftSites)
 
 	// original: 6.5s -> parallel ~1.2
 	return
 }
 
-func (s *Site) getUnscopedToken(at string) (unscopedToken string, err error) {
+func (s *site) getUnscopedToken(ctx context.Context, at string) (unscopedToken string, err error) {
 	idp := "egi.eu"
 	authProtocol := "openid"
 	url := fmt.Sprintf("%s/OS-FEDERATION/identity_providers/%s/protocols/%s/auth",
 		s.Config.Endpoint, idp, authProtocol)
-	req, err := http.NewRequest("POST", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
 	if err != nil {
 		return
 	}
@@ -332,7 +354,7 @@ func (s *Site) getUnscopedToken(at string) (unscopedToken string, err error) {
 	if err != nil {
 		return
 	}
-	if resp.StatusCode != 201 {
+	if resp.StatusCode != http.StatusCreated {
 		err = fmt.Errorf("requesting unscoped token: %s", resp.Status)
 		return
 	}
@@ -340,7 +362,7 @@ func (s *Site) getUnscopedToken(at string) (unscopedToken string, err error) {
 	return
 }
 
-func (c SiteConfig) projectForVO(selectedVO string) (projectID string) {
+func (c siteConfig) projectForVO(selectedVO string) (projectID string) {
 	for _, vo := range c.VOs {
 		if strings.Contains(selectedVO, vo.Name) {
 			return vo.Auth.ProjectID
@@ -350,7 +372,7 @@ func (c SiteConfig) projectForVO(selectedVO string) (projectID string) {
 }
 
 // https://docs.openstack.org/api-ref/identity/v3/index.html#authentication-and-token-management
-func (s *Site) getScopedTokenInfo(auth *SiteAuth, vo string) (parsedAuthResponse AuthResponse, err error) {
+func (s *site) getScopedTokenInfo(ctx context.Context, auth *siteAuth, vo string) (parsedAuthResponse authResponse, scopedToken string, err error) {
 	url := s.Config.Endpoint
 	if !strings.HasSuffix(url, "/") {
 		url += "/"
@@ -383,7 +405,7 @@ func (s *Site) getScopedTokenInfo(auth *SiteAuth, vo string) (parsedAuthResponse
 		return
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return
 	}
@@ -395,6 +417,8 @@ func (s *Site) getScopedTokenInfo(auth *SiteAuth, vo string) (parsedAuthResponse
 		return
 	}
 
+	scopedToken = resp.Header.Get("X-Subject-Token")
+
 	var respBytes []byte
 	respBytes, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -405,25 +429,27 @@ func (s *Site) getScopedTokenInfo(auth *SiteAuth, vo string) (parsedAuthResponse
 	if err != nil {
 		return
 	}
+
 	return
 }
 
-func (s *Site) parseAuthResponse(auth *SiteAuth, authResponse AuthResponse) (err error) {
+func (s *site) parseAuthResponse(auth *siteAuth, authResp authResponse, scopedToken string) (err error) {
 	if auth == nil {
 		err = fmt.Errorf("auth is nil")
 		return
 	}
-	if authResponse.Token == nil {
+	if authResp.Token == nil {
 		err = fmt.Errorf("authResponse.Token is nil")
 		return
 	}
-	auth.Token = *authResponse.Token
-	for _, entry := range auth.Token.Catalog {
-		if entry.Type == "object-store" {
+	auth.ScopedToken = scopedToken
+	auth.TokenInfo = *authResp.Token
+	for _, entry := range auth.TokenInfo.Catalog {
+		if entry.Type == endpointType {
 			auth.SwiftCatalogEntry = &entry
-			for _, endpoint := range entry.Endpoints {
-				if endpoint.Interface == "public" {
-					auth.SwiftEndpoint = &endpoint
+			for _, e := range entry.Endpoints {
+				if e.Interface == "public" {
+					auth.SwiftEndpoint = &e
 					break
 				}
 			}
@@ -432,20 +458,26 @@ func (s *Site) parseAuthResponse(auth *SiteAuth, authResponse AuthResponse) (err
 	return
 }
 
-func (s *Site) Authenticate(c *Config) (err error) {
+func (s *site) authenticate(c *config) (err error) {
+	ctx, cancel := context.WithTimeout(defaultCtx, defaultTimeout)
+	defer cancel()
+
 	// fmt.Printf("Authenticating against site %s\n", s)
-	auth := new(SiteAuth)
-	auth.UnscopedToken, err = s.getUnscopedToken(c.AccessToken)
+	auth := new(siteAuth)
+	auth.UnscopedToken, err = s.getUnscopedToken(ctx, c.AccessToken)
 	if err != nil {
 		return
 	}
-	var authResponse AuthResponse
-	authResponse, err = s.getScopedTokenInfo(auth, c.VO)
+	var (
+		authResp    authResponse
+		scopedToken string
+	)
+	authResp, scopedToken, err = s.getScopedTokenInfo(ctx, auth, c.VO)
 	if err != nil {
 		return
 	}
 
-	err = s.parseAuthResponse(auth, authResponse)
+	err = s.parseAuthResponse(auth, authResp, scopedToken)
 	if err != nil {
 		return
 	}
@@ -454,30 +486,30 @@ func (s *Site) Authenticate(c *Config) (err error) {
 	return
 }
 
-func (s *Site) IsAuthenticated() bool {
-	return s.Auth != nil && time.Until(*s.Auth.Token.ExpiresAt) > 0
+func (s *site) isAuthenticated() bool {
+	return s.Auth != nil && time.Until(*s.Auth.TokenInfo.ExpiresAt) > 0
 }
 
-func (s *Site) GetAuth(c *Config) (auth *SiteAuth, err error) {
-	if s.IsAuthenticated() {
+func (s *site) getAuth(c *config) (auth *siteAuth, err error) {
+	if s.isAuthenticated() {
 		auth = s.Auth
 		return
 	}
-	err = s.Authenticate(c)
+	err = s.authenticate(c)
 	auth = s.Auth
 	return
 }
 
-func (s *Site) FindPublicSwiftEndpoint(c *Config) (endpoint *Endpoint, err error) {
-	auth, err := s.GetAuth(c)
+func (s *site) findPublicSwiftEndpoint(c *config) (ep *endpoint, err error) {
+	auth, err := s.getAuth(c)
 	if err != nil {
 		return
 	}
-	endpoint = auth.SwiftEndpoint
+	ep = auth.SwiftEndpoint
 	return
 }
 
-func (s *Site) HasAvailableSwiftEndpoint(c *Config) bool {
+func (s *site) hasAvailableSwiftEndpoint(c *config) bool {
 	available := false
 	for _, siteVO := range s.Config.VOs {
 		if strings.Contains(c.VO, siteVO.Name) {
@@ -486,29 +518,29 @@ func (s *Site) HasAvailableSwiftEndpoint(c *Config) bool {
 		}
 	}
 	if available {
-		endpoint, err := s.FindPublicSwiftEndpoint(c)
+		ep, err := s.findPublicSwiftEndpoint(c)
 		if err != nil {
-			fmt.Printf("Error finding endpoint: %v\n", err)
-		} else if endpoint != nil {
+			fmt.Printf("Error discovering endpoint: %v\n", err)
+		} else if ep != nil {
 			return true
 		}
 	}
 	return false
 }
 
-func getSite(c *Config) (site *Site, err error) {
+func getSite(c *config) (s *site, err error) {
 	// if the user has provided an site argument we check it
 	if *argSite != "" {
-		site = c.GetSiteByName(*argSite)
-		if site == nil {
+		s = c.GetSiteByName(*argSite)
+		if s == nil {
 			err = fmt.Errorf("no site with this name found: %s", *argSite)
 			return
 		}
-		if !site.HasAvailableSwiftEndpoint(c) {
+		if !s.hasAvailableSwiftEndpoint(c) {
 			err = fmt.Errorf("the selected site %s provides no public swift endpoint for the selected VO %s", *argSite, c.VO)
 			return
 		}
-		fmt.Printf("Using site: %s\n", site)
+		fmt.Printf("Using site: %s\n", s)
 		return
 	}
 
@@ -520,15 +552,15 @@ func getSite(c *Config) (site *Site, err error) {
 
 	fmt.Println("Select a site:")
 	siteName := selectString(sites)
-	site = c.GetSiteByName(siteName)
-	if site == nil {
+	s = c.GetSiteByName(siteName)
+	if s == nil {
 		err = fmt.Errorf("invalid choice: '%s'", siteName)
 	}
 	return
 }
 
 func run() (err error) {
-	c := new(Config)
+	c := new(config)
 	err = c.Fetch()
 	if err != nil {
 		return
@@ -540,39 +572,43 @@ func run() (err error) {
 	}
 
 	fmt.Printf("Searching sites providing swift for this VO\n")
-	var site *Site
+	var site *site
 	site, err = getSite(c)
 	if err != nil {
 		return
 	}
 
-	endpoint, err := site.FindPublicSwiftEndpoint(c)
+	endP, err := site.findPublicSwiftEndpoint(c)
 	if err != nil {
 		return
 	}
-	fmt.Printf("Available swift endpoint: %s\n", endpoint.URL)
+
+	env := map[string]string{
+		"OS_AUTH_TOKEN":  site.Auth.ScopedToken,
+		"OS_AUTH_URL":    site.Config.Endpoint,
+		"OS_STORAGE_URL": endP.URL,
+	}
+	w := os.Stderr
+	for k, v := range env {
+		fmt.Fprintf(w, "export %s=%s\n", k, v)
+	}
+	// fmt.Printf("Available swift endpoint: %s\n", endP.URL)
 	return
 }
 
-// go-prompt eats Ctrl+C if we don't do this, see: https://github.com/c-bata/go-prompt/issues/228#issuecomment-820639887
-func handleExit() {
-	rawModeOff := exec.Command("/bin/stty", "-raw", "echo")
-	rawModeOff.Stdin = os.Stdin
-	_ = rawModeOff.Run()
-	rawModeOff.Wait()
-}
-
-func main() {
-	defer handleExit()
-
+func registerInterruptHandler() {
 	intChan := make(chan os.Signal, 1)
 	signal.Notify(intChan, os.Interrupt)
 	go func() {
 		<-intChan
 		fmt.Printf("Exiting on user interrupt")
+		defCancel()
 		os.Exit(0)
 	}()
+}
 
+func main() {
+	registerInterruptHandler()
 	kingpin.Parse()
 	err := run()
 	if err != nil {

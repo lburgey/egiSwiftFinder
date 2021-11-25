@@ -8,7 +8,7 @@ import (
 )
 
 func TestConfig(t *testing.T) {
-	c := new(Config)
+	c := new(config)
 	err := c.Fetch()
 	assert.Nil(t, err)
 	assert.Greater(t, len(c.Sites), 0)
@@ -22,10 +22,10 @@ func TestRun(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-var benchmarkConfigResult *Config
+var benchmarkConfigResult *config
 
 func BenchmarkConfig(b *testing.B) {
-	c := new(Config)
+	c := new(config)
 	for i := 0; i < b.N; i++ {
 		c.Fetch()
 	}
