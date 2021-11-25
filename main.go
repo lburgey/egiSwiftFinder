@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/adrg/xdg"
 	"github.com/indigo-dc/liboidcagent-go"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/yaml.v2"
@@ -24,10 +25,12 @@ const (
 	gocdbPublicURL   = "https://goc.egi.eu/gocdbpi/public/"
 
 	// endpointType which we search at the sites
-	endpointType = "object-store"
+	endpointType            = "object-store"
+	defaultRcloneRemoteName = "egiswift"
 )
 
 var (
+	rcloneConfigFile      = xdg.ConfigHome + "/rclone/rclone.conf"
 	defaultCtx, defCancel = context.WithCancel(context.Background())
 	argOIDCAgentAccount   = kingpin.Flag("oidc-agent", "oidc-agent account shortname").Short('o').Envar("OIDC_AGENT_ACCOUNT").String()
 	argVO                 = kingpin.Flag("vo", "Virtual organisation").Short('v').Envar("EGI_VO").String()
@@ -571,7 +574,7 @@ func run() (err error) {
 		return
 	}
 
-	fmt.Printf("Searching sites providing swift for this VO\n")
+	fmt.Printf("\nSearching sites providing swift for this VO\n")
 	var site *site
 	site, err = getSite(c)
 	if err != nil {
@@ -592,6 +595,15 @@ func run() (err error) {
 	for k, v := range env {
 		fmt.Fprintf(w, "export %s=%s\n", k, v)
 	}
+
+	fmt.Print("\n")
+	var rcloneRemote string
+	rcloneRemote, err = assureRcloneConfig()
+	if err != nil {
+		return
+	}
+	fmt.Printf("\nYou can now use the rclone remote %s like so:\n\trclone lsd %s:\n", rcloneRemote, rcloneRemote)
+
 	// fmt.Printf("Available swift endpoint: %s\n", endP.URL)
 	return
 }

@@ -5,7 +5,9 @@ go 1.17
 // replace github.com/indigo-dc/liboidcagent-go => ../../indigo-dc/liboidcagent-go
 
 require (
+	github.com/adrg/xdg v0.4.0
 	github.com/c-bata/go-prompt v0.2.6
+	github.com/go-ini/ini v1.64.0
 	github.com/indigo-dc/liboidcagent-go v0.3.0
 	github.com/jpillora/longestcommon v0.0.0-20161227235612-adb9d91ee629
 	github.com/stretchr/testify v1.7.0
@@ -14,7 +16,6 @@ require (
 )
 
 require (
-	github.com/adrg/xdg v0.4.0 // indirect
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/alecthomas/units v0.0.0-20210927113745-59d0afb8317a // indirect
 	github.com/davecgh/go-spew v1.1.0 // indirect

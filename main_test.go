@@ -31,3 +31,9 @@ func BenchmarkConfig(b *testing.B) {
 	}
 	benchmarkConfigResult = c
 }
+
+func TestAssureRloneConfig(t *testing.T) {
+	name, err := assureRcloneConfig()
+	assert.Nil(t, err)
+	assert.Equal(t, "egiswift", name)
+}
