@@ -1,14 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"sort"
-	"strings"
 
 	"github.com/c-bata/go-prompt"
-	"github.com/jpillora/longestcommon"
 )
 
 // go-prompt eats Ctrl+C if we don't do this, see: https://github.com/c-bata/go-prompt/issues/228#issuecomment-820639887
@@ -26,12 +23,11 @@ func selectString(choices []string) string {
 	}
 
 	sort.Strings(choices)
-	prefix := longestcommon.Prefix(choices)
 	completer := func(d prompt.Document) []prompt.Suggest {
 		ss := make([]prompt.Suggest, len(choices))
 		for i, s := range choices {
 			ss[i] = prompt.Suggest{
-				Text: strings.TrimPrefix(s, prefix),
+				Text: s,
 			}
 		}
 		return prompt.FilterHasPrefix(ss, d.GetWordBeforeCursor(), true)
@@ -39,10 +35,8 @@ func selectString(choices []string) string {
 	options := []prompt.Option{
 		prompt.OptionShowCompletionAtStart(),
 		prompt.OptionCompletionOnDown(),
-		// prompt.OptionInitialBufferText(prefix),
-		prompt.OptionPrefix("> " + prefix),
+		prompt.OptionPrefix("> "),
 	}
 	choice := prompt.Input("", completer, options...)
-	fmt.Printf("\n")
-	return prefix + choice
+	return choice
 }

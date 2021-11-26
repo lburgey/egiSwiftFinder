@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -35,10 +36,33 @@ var (
 	argOIDCAgentAccount   = kingpin.Flag("oidc-agent", "oidc-agent account shortname").Short('o').Envar("OIDC_AGENT_ACCOUNT").String()
 	argVO                 = kingpin.Flag("vo", "Virtual organisation").Short('v').Envar("EGI_VO").String()
 	argSite               = kingpin.Flag("site", "Site").Short('s').Envar("EGI_SITE").String()
+
+	// voRegex is used for extracting the group part from entitlements.
+	voRegex = regexp.MustCompile("^(?:.+group:)(?P<vo>.+?)(?:(?::role=)|#)|$")
 )
 
 type userInfo struct {
 	Entitlements []string `json:"eduperson_entitlement"`
+}
+
+func voFromEntitlement(ent string) (vo string) {
+	matches := voRegex.FindStringSubmatch(ent)
+	if len(matches) == 2 {
+		return matches[1]
+	}
+	return
+}
+
+func (u *userInfo) getVOs() (vos []string) {
+	vos = []string{}
+	uniqueVOs := map[string]bool{}
+	for _, ent := range u.Entitlements {
+		uniqueVOs[voFromEntitlement(ent)] = true
+	}
+	for vo := range uniqueVOs {
+		vos = append(vos, vo)
+	}
+	return
 }
 
 type config struct {
@@ -280,7 +304,7 @@ func getVO(userinfo userInfo) (vo string, err error) {
 	}
 
 	fmt.Println("Select a VO:")
-	vo = selectString(userinfo.Entitlements)
+	vo = selectString(userinfo.getVOs())
 	return
 }
 

@@ -9,7 +9,6 @@ require (
 	github.com/c-bata/go-prompt v0.2.6
 	github.com/go-ini/ini v1.64.0
 	github.com/indigo-dc/liboidcagent-go v0.3.0
-	github.com/jpillora/longestcommon v0.0.0-20161227235612-adb9d91ee629
 	github.com/stretchr/testify v1.7.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.2.2
