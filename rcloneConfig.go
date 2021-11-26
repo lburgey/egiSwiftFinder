@@ -30,7 +30,7 @@ func searchSuitableRemote(cfg *ini.File) (remoteName string) {
 	for _, section := range cfg.Sections() {
 		if section.Key("type").String() == "swift" && section.Key("env_auth").MustBool() {
 			remoteName = section.Name()
-			fmt.Printf("Found suitable rclone remote: %s\n", remoteName)
+			printSelected("rclone remote", remoteName)
 			return
 		}
 	}

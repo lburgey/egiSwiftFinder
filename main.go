@@ -244,11 +244,11 @@ func getOIDCAgentAccount() (accountName string, err error) {
 		return
 	} else if loadedLen == 1 {
 		accountName = loadedAccounts[0]
-		fmt.Printf("Using the only loaded oidc-agent account: %s\n", accountName)
+		printSelected("oidc-agent account", accountName)
 		return
 	}
-	fmt.Printf("Select a loaded oidc-agent account:\n")
-	accountName = selectString(loadedAccounts)
+
+	accountName, err = selectString("oidc-agent account", loadedAccounts)
 	return
 }
 
@@ -299,12 +299,12 @@ func getUserInfo(c *config) (ui userInfo, err error) {
 func getVO(userinfo userInfo) (vo string, err error) {
 	if *argVO != "" {
 		vo = *argVO
-		fmt.Printf("Using VO: %s\n", vo)
+		printSelected("VO", vo)
 		return
 	}
 
-	fmt.Println("Select a VO:")
-	vo = selectString(userinfo.getVOs())
+	vos := userinfo.getVOs()
+	vo, err = selectString("VO", vos)
 	return
 }
 
@@ -547,7 +547,7 @@ func (s *site) hasAvailableSwiftEndpoint(c *config) bool {
 	if available {
 		ep, err := s.findPublicSwiftEndpoint(c)
 		if err != nil {
-			fmt.Printf("Error discovering endpoint: %v\n", err)
+			printWarn("Failed to discover endpoint of site: " + s.String())
 		} else if ep != nil {
 			return true
 		}
@@ -567,7 +567,7 @@ func getSite(c *config) (s *site, err error) {
 			err = fmt.Errorf("the selected site %s provides no public swift endpoint for the selected VO %s", *argSite, c.VO)
 			return
 		}
-		fmt.Printf("Using site: %s\n", s)
+		printSelected("Site", s.String())
 		return
 	}
 
@@ -581,10 +581,13 @@ func getSite(c *config) (s *site, err error) {
 	var siteName string
 	if siteCount == 1 {
 		siteName = sites[0]
-		fmt.Printf("Found one site providing swift: %s\n", siteName)
+		printSelected("Site", siteName)
 	} else {
-		fmt.Printf("Found %d sites providing swift. Choose one:\n", siteCount)
-		siteName = selectString(sites)
+		fmt.Printf("Found %d sites providing swift\n", siteCount)
+		siteName, err = selectString("Site", sites)
+		if err != nil {
+			return
+		}
 	}
 	s = c.GetSiteByName(siteName)
 	if s == nil {
@@ -605,7 +608,7 @@ func run() (err error) {
 		return
 	}
 
-	fmt.Printf("\nSearching sites providing swift for this VO\n")
+	fmt.Printf("Searching sites providing swift for this VO\n")
 	var site *site
 	site, err = getSite(c)
 	if err != nil {
@@ -627,7 +630,6 @@ func run() (err error) {
 		fmt.Fprintf(w, "export %s=%s\n", k, v)
 	}
 
-	fmt.Print("\n")
 	var rcloneRemote string
 	rcloneRemote, err = assureRcloneConfig()
 	if err != nil {

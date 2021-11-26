@@ -1,42 +1,57 @@
 package main
 
 import (
-	"os"
-	"os/exec"
+	"bytes"
+	"fmt"
 	"sort"
+	"text/template"
 
-	"github.com/c-bata/go-prompt"
+	"github.com/manifoldco/promptui"
 )
 
-// go-prompt eats Ctrl+C if we don't do this, see: https://github.com/c-bata/go-prompt/issues/228#issuecomment-820639887
-func fixTTY() {
-	rawModeOff := exec.Command("/bin/stty", "-raw", "echo")
-	rawModeOff.Stdin = os.Stdin
-	_ = rawModeOff.Run()
-	rawModeOff.Wait()
+func templateForSelected(kind string) string {
+	return fmt.Sprintf(`{{ "%s" | green }} %s: {{ . | bold }}`, promptui.IconGood, kind)
 }
 
-func selectString(choices []string) string {
-	defer fixTTY()
-	if len(choices) == 0 {
-		return ""
-	}
+func printWarn(errString string) {
+	fmt.Printf("%s %s\n", promptui.IconWarn, errString)
+}
 
+func printError(errString string) {
+	fmt.Printf("%s %s\n", promptui.IconBad, errString)
+}
+
+// printSelected prints in the same style as if we made a choice using selectString
+// this is used when we determined that the user only has a single choice
+func printSelected(kind string, choice string) (err error) {
+	tpl, err := template.New("").Funcs(promptui.FuncMap).Parse(
+		templateForSelected(kind),
+	)
+	if err != nil {
+		return
+	}
+	var buf bytes.Buffer
+	err = tpl.Execute(&buf, choice)
+	if err != nil {
+		return
+	}
+	fmt.Printf("%s\n", string(buf.Bytes()))
+	return
+}
+
+func selectString(kind string, choices []string) (choice string, err error) {
+	if len(choices) == 0 {
+		err = fmt.Errorf("no choices provided")
+		return
+	}
 	sort.Strings(choices)
-	completer := func(d prompt.Document) []prompt.Suggest {
-		ss := make([]prompt.Suggest, len(choices))
-		for i, s := range choices {
-			ss[i] = prompt.Suggest{
-				Text: s,
-			}
-		}
-		return prompt.FilterHasPrefix(ss, d.GetWordBeforeCursor(), true)
+	prompt := promptui.Select{
+		Label: fmt.Sprintf("Select a %s", kind),
+		Items: choices,
+		Templates: &promptui.SelectTemplates{
+			Selected: templateForSelected(kind),
+		},
 	}
-	options := []prompt.Option{
-		prompt.OptionShowCompletionAtStart(),
-		prompt.OptionCompletionOnDown(),
-		prompt.OptionPrefix("> "),
-	}
-	choice := prompt.Input("", completer, options...)
-	return choice
+	_, choice, err = prompt.Run()
+	return
 }
