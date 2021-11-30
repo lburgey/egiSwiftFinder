@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"os"
@@ -6,6 +6,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 )
+
+var args = &Args{
+	OIDCAgentAccount: os.Getenv("OIDC_AGENT_ACCOUNT"),
+	Site:             os.Getenv("EGI_SITE"),
+	VO:               os.Getenv("EGI_VO"),
+}
 
 func TestVOFromEntilements(t *testing.T) {
 	assert.Equal(t, "eosc-synergy.eu", voFromEntitlement("urn:mace:egi.eu:group:eosc-synergy.eu:role=member#aai.egi.eu"))
@@ -22,23 +28,16 @@ func TestConfig(t *testing.T) {
 }
 
 func TestRun(t *testing.T) {
-	*argOIDCAgentAccount = os.Getenv("OIDC_AGENT_ACCOUNT")
-	*argSite = os.Getenv("EGI_SITE")
-	*argVO = os.Getenv("EGI_VO")
-	err := run()
+	err := Run(args)
 	assert.Nil(t, err)
 }
 
 func TestCheckSwift(t *testing.T) {
-	*argOIDCAgentAccount = os.Getenv("OIDC_AGENT_ACCOUNT")
-	*argSite = os.Getenv("EGI_SITE")
-	*argVO = os.Getenv("EGI_VO")
-
-	config, err := newConfig()
+	config, err := newConfig(args)
 	assert.Nil(t, err)
 	assert.NotNil(t, config)
 
-	site, err := getSite(config)
+	site, err := getSite(args, config)
 	assert.Nil(t, err)
 	assert.NotNil(t, site)
 

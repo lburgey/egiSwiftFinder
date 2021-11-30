@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"bytes"
@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-	"os/signal"
 	"regexp"
 	"strings"
 	"sync"
@@ -16,7 +15,7 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/indigo-dc/liboidcagent-go"
-	"gopkg.in/alecthomas/kingpin.v2"
+	"github.com/lburgey/egiSwiftFinder/internal/utils"
 	"gopkg.in/yaml.v2"
 )
 
@@ -30,16 +29,11 @@ const (
 )
 
 var (
-	// version is set via: go build -ldflags '-X main.version=foobar'
-	version               = ""
-	rcloneConfigFile      = xdg.ConfigHome + "/rclone/rclone.conf"
-	defaultCtx, defCancel = context.WithCancel(context.Background())
-	argOIDCAgentAccount   = kingpin.Flag("oidc-agent", "oidc-agent account shortname").Short('o').Envar("OIDC_AGENT_ACCOUNT").String()
-	argVO                 = kingpin.Flag("vo", "Virtual organisation").Short('v').Envar("EGI_VO").String()
-	argSite               = kingpin.Flag("site", "Site").Short('s').Envar("EGI_SITE").String()
+	rcloneConfigFile = xdg.ConfigHome + "/rclone/rclone.conf"
 
 	// voRegex is used for extracting the group part from entitlements.
-	voRegex = regexp.MustCompile("^(?:.+group:)(?P<vo>.+?)(?:(?:(?::admin)|:role=)|#)|$")
+	voRegex     = regexp.MustCompile("^(?:.+group:)(?P<vo>.+?)(?:(?:(?::admin)|:role=)|#)|$")
+	Ctx, Cancel = context.WithCancel(context.Background())
 )
 
 type userInfo struct {
@@ -204,7 +198,7 @@ func fetchSiteConfig(ctx context.Context, path string) (config *siteConfig, err 
 }
 
 func (c *config) Fetch() (err error) {
-	ctx, cancel := context.WithTimeout(defaultCtx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(Ctx, defaultTimeout)
 	defer cancel()
 
 	var configPaths []string
@@ -234,20 +228,20 @@ func (c *config) Fetch() (err error) {
 	return
 }
 
-func newConfig() (c *config, err error) {
+func newConfig(args *Args) (c *config, err error) {
 	c = new(config)
 	err = c.Fetch()
 	if err != nil {
 		return
 	}
 
-	err = c.SetUserAuth()
+	err = c.SetUserAuth(args)
 	return
 }
 
-func getOIDCAgentAccount() (accountName string, err error) {
-	if *argOIDCAgentAccount != "" {
-		accountName = *argOIDCAgentAccount
+func getOIDCAgentAccount(args *Args) (accountName string, err error) {
+	if args.OIDCAgentAccount != "" {
+		accountName = args.OIDCAgentAccount
 		return
 	}
 	loadedAccounts, err := liboidcagent.GetLoadedAccounts()
@@ -260,17 +254,17 @@ func getOIDCAgentAccount() (accountName string, err error) {
 		return
 	} else if loadedLen == 1 {
 		accountName = loadedAccounts[0]
-		err = printSelected("oidc-agent account", accountName)
+		err = utils.PrintSelected("oidc-agent account", accountName)
 		return
 	}
 
-	accountName, err = selectString("oidc-agent account", loadedAccounts)
+	accountName, err = utils.SelectString("oidc-agent account", loadedAccounts)
 	return
 }
 
-func (ua *userAuthParams) getAT() (err error) {
+func (ua *userAuthParams) getAT(args *Args) (err error) {
 	var accountName string
-	accountName, err = getOIDCAgentAccount()
+	accountName, err = getOIDCAgentAccount(args)
 	if err != nil {
 		return
 	}
@@ -287,7 +281,7 @@ func (ua *userAuthParams) getAT() (err error) {
 }
 
 func (ua *userAuthParams) getUserInfo(c *config) (ui userInfo, err error) {
-	ctx, cancel := context.WithTimeout(defaultCtx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(Ctx, defaultTimeout)
 	defer cancel()
 
 	var req *http.Request
@@ -312,21 +306,21 @@ func (ua *userAuthParams) getUserInfo(c *config) (ui userInfo, err error) {
 	return
 }
 
-func (ua *userAuthParams) getVO(userinfo userInfo) (err error) {
-	if *argVO != "" {
-		ua.VO = *argVO
-		err = printSelected("VO", ua.VO)
+func (ua *userAuthParams) getVO(args *Args, userinfo userInfo) (err error) {
+	if args.VO != "" {
+		ua.VO = args.VO
+		err = utils.PrintSelected("VO", ua.VO)
 		return
 	}
 
 	vos := userinfo.getVOs()
-	ua.VO, err = selectString("VO", vos)
+	ua.VO, err = utils.SelectString("VO", vos)
 	return
 }
 
-func (c *config) SetUserAuth() (err error) {
+func (c *config) SetUserAuth(args *Args) (err error) {
 	ua := new(userAuthParams)
-	err = ua.getAT()
+	err = ua.getAT(args)
 	if err != nil {
 		return
 	}
@@ -337,7 +331,7 @@ func (c *config) SetUserAuth() (err error) {
 		return
 	}
 
-	err = ua.getVO(userinfo)
+	err = ua.getVO(args, userinfo)
 	if err != nil {
 		return
 	}
@@ -507,7 +501,7 @@ func (s *site) parseAuthResponse(auth *siteAuth, authResp authResponse, scopedTo
 }
 
 func (s *site) authenticate(ua *userAuthParams) (err error) {
-	ctx, cancel := context.WithTimeout(defaultCtx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(Ctx, defaultTimeout)
 	defer cancel()
 
 	// fmt.Printf("Authenticating against site %s\n", s)
@@ -571,7 +565,7 @@ func (s *site) hasAvailableSwiftEndpoint(ua *userAuthParams) bool {
 
 	ep, err := s.findPublicSwiftEndpoint(ua)
 	if err != nil {
-		printWarn("Failed to discover endpoint of site: " + s.String())
+		utils.PrintWarn("Failed to discover endpoint of site: " + s.String())
 		return false
 	}
 	if ep == nil {
@@ -580,7 +574,7 @@ func (s *site) hasAvailableSwiftEndpoint(ua *userAuthParams) bool {
 
 	err = s.checkSwiftEndpoint(ep)
 	if err != nil {
-		printWarn("Swift endpoint is not operable at site: " + s.String())
+		utils.PrintWarn("Swift endpoint is not operable at site: " + s.String())
 		return false
 	}
 	return true
@@ -603,7 +597,7 @@ func (s *site) printRcloneEnvironment() (err error) {
 }
 
 func (s *site) checkSwiftEndpoint(endpoint *endpoint) (err error) {
-	ctx, cancel := context.WithTimeout(defaultCtx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(Ctx, defaultTimeout)
 	defer cancel()
 
 	storageURL := endpoint.URL
@@ -623,19 +617,19 @@ func (s *site) checkSwiftEndpoint(endpoint *endpoint) (err error) {
 	return
 }
 
-func getSite(c *config) (s *site, err error) {
+func getSite(args *Args, c *config) (s *site, err error) {
 	// if the user has provided an site argument we check it
-	if *argSite != "" {
-		s = c.GetSiteByName(*argSite)
+	if args.Site != "" {
+		s = c.GetSiteByName(args.Site)
 		if s == nil {
-			err = fmt.Errorf("no site with this name found: %s", *argSite)
+			err = fmt.Errorf("no site with this name found: %s", args.Site)
 			return
 		}
 		if !s.hasAvailableSwiftEndpoint(c.UserAuth) {
-			err = fmt.Errorf("the selected site %s provides no public swift endpoint for the selected VO %s", *argSite, c.UserAuth.VO)
+			err = fmt.Errorf("the selected site %s provides no public swift endpoint for the selected VO %s", args.Site, c.UserAuth.VO)
 			return
 		}
-		err = printSelected("Site", s.String())
+		err = utils.PrintSelected("Site", s.String())
 		return
 	}
 
@@ -649,13 +643,13 @@ func getSite(c *config) (s *site, err error) {
 	var siteName string
 	if siteCount == 1 {
 		siteName = sites[0]
-		err = printSelected("Site", siteName)
+		err = utils.PrintSelected("Site", siteName)
 		if err != nil {
 			return
 		}
 	} else {
 		fmt.Printf("Found %d sites providing swift\n", siteCount)
-		siteName, err = selectString("Site", sites)
+		siteName, err = utils.SelectString("Site", sites)
 		if err != nil {
 			return
 		}
@@ -667,14 +661,21 @@ func getSite(c *config) (s *site, err error) {
 	return
 }
 
-func run() (err error) {
-	config, err := newConfig()
+// Args are optional user provided arguments
+type Args struct {
+	VO               string
+	OIDCAgentAccount string
+	Site             string
+}
+
+func Run(args *Args) (err error) {
+	config, err := newConfig(args)
 	if err != nil {
 		return
 	}
 
 	fmt.Printf("Searching sites providing swift for this VO\n")
-	site, err := getSite(config)
+	site, err := getSite(args, config)
 	if err != nil {
 		return
 	}
@@ -696,28 +697,4 @@ func run() (err error) {
 	}
 	fmt.Printf("\nYou can now use the rclone remote %s like so:\n\t'rclone lsd %s:'\n", rcloneRemote, rcloneRemote)
 	return
-}
-
-func registerInterruptHandler() {
-	intChan := make(chan os.Signal, 1)
-	signal.Notify(intChan, os.Interrupt)
-	go func() {
-		<-intChan
-		fmt.Printf("\nExiting on user interrupt")
-		defCancel()
-		os.Exit(0)
-	}()
-}
-
-func main() {
-	registerInterruptHandler()
-	if version != "" {
-		kingpin.Version(version)
-	}
-	kingpin.Parse()
-
-	err := run()
-	if err != nil {
-		printError("Error: " + err.Error())
-	}
 }

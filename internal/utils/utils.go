@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"bytes"
@@ -13,17 +13,17 @@ func templateForSelected(kind string) string {
 	return fmt.Sprintf(`{{ "%s" | green }} %s: {{ . | bold }}`, promptui.IconGood, kind)
 }
 
-func printWarn(errString string) {
+func PrintWarn(errString string) {
 	fmt.Printf("%s %s\n", promptui.IconWarn, errString)
 }
 
-func printError(errString string) {
+func PrintError(errString string) {
 	fmt.Printf("%s %s\n", promptui.IconBad, errString)
 }
 
 // printSelected prints in the same style as if we made a choice using selectString
 // this is used when we determined that the user only has a single choice
-func printSelected(kind string, choice string) (err error) {
+func PrintSelected(kind string, choice string) (err error) {
 	tpl, err := template.New("").Funcs(promptui.FuncMap).Parse(
 		templateForSelected(kind),
 	)
@@ -39,7 +39,7 @@ func printSelected(kind string, choice string) (err error) {
 	return
 }
 
-func selectString(kind string, choices []string) (choice string, err error) {
+func SelectString(kind string, choices []string) (choice string, err error) {
 	if len(choices) == 0 {
 		err = fmt.Errorf("no choices provided")
 		return

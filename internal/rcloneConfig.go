@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/go-ini/ini"
+	"github.com/lburgey/egiSwiftFinder/internal/utils"
 )
 
 func getRcloneConfig(fileName string) (cfg *ini.File, created bool, err error) {
@@ -30,7 +31,7 @@ func searchSuitableRemote(cfg *ini.File) (remoteName string, err error) {
 	for _, section := range cfg.Sections() {
 		if section.Key("type").String() == "swift" && section.Key("env_auth").MustBool() {
 			remoteName = section.Name()
-			err = printSelected("rclone remote", remoteName)
+			err = utils.PrintSelected("rclone remote", remoteName)
 			return
 		}
 	}
