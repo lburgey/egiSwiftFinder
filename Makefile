@@ -17,7 +17,7 @@ $(BIN_DIR):
 .PHONY: tarball
 tarball: $(BIN) $(SCRIPT)
 	cp -f $(SCRIPT) $(BIN_DIR)
-	tar -czvf $(BIN).$(LINUX_OS)-$(ARCH).tar.gz -C $(BIN_DIR) $(SCRIPT) $(BIN_NAME)
+	tar -czvf $(BIN)-$(LINUX_OS)-$(ARCH).tar.gz -C $(BIN_DIR) $(SCRIPT) $(BIN_NAME)
 
 .PHONY: lint
 lint:
