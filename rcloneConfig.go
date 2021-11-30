@@ -26,11 +26,11 @@ func getRcloneConfig(fileName string) (cfg *ini.File, created bool, err error) {
 	return
 }
 
-func searchSuitableRemote(cfg *ini.File) (remoteName string) {
+func searchSuitableRemote(cfg *ini.File) (remoteName string, err error) {
 	for _, section := range cfg.Sections() {
 		if section.Key("type").String() == "swift" && section.Key("env_auth").MustBool() {
 			remoteName = section.Name()
-			printSelected("rclone remote", remoteName)
+			err = printSelected("rclone remote", remoteName)
 			return
 		}
 	}
@@ -63,7 +63,7 @@ func assureRcloneConfig() (remoteName string, err error) {
 		return
 	}
 	if !created {
-		remoteName = searchSuitableRemote(cfg)
+		remoteName, err = searchSuitableRemote(cfg)
 		if remoteName != "" {
 			return
 		}
@@ -71,7 +71,10 @@ func assureRcloneConfig() (remoteName string, err error) {
 
 	// add a suitable remote to the config
 	remoteName = defaultRcloneRemoteName
-	addRemote(cfg, remoteName)
+	err = addRemote(cfg, remoteName)
+	if err != nil {
+		return
+	}
 	err = cfg.SaveTo(rcloneConfigFile)
 	return
 }

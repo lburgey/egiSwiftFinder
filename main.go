@@ -21,9 +21,8 @@ import (
 )
 
 const (
-	defaultTimeout   = 5 * time.Second
+	defaultTimeout   = 3 * time.Second
 	defaultConfigURL = "https://raw.githubusercontent.com/tdviet/fedcloudclient/master/config/sites.yaml"
-	gocdbPublicURL   = "https://goc.egi.eu/gocdbpi/public/"
 
 	// endpointType which we search at the sites
 	endpointType            = "object-store"
@@ -259,7 +258,7 @@ func getOIDCAgentAccount() (accountName string, err error) {
 		return
 	} else if loadedLen == 1 {
 		accountName = loadedAccounts[0]
-		printSelected("oidc-agent account", accountName)
+		err = printSelected("oidc-agent account", accountName)
 		return
 	}
 
@@ -314,7 +313,7 @@ func (ua *userAuthParams) getUserInfo(c *config) (ui userInfo, err error) {
 func (ua *userAuthParams) getVO(userinfo userInfo) (err error) {
 	if *argVO != "" {
 		ua.VO = *argVO
-		printSelected("VO", ua.VO)
+		err = printSelected("VO", ua.VO)
 		return
 	}
 
@@ -585,7 +584,7 @@ func (s *site) hasAvailableSwiftEndpoint(ua *userAuthParams) bool {
 	return true
 }
 
-func (s *site) printRcloneEnvironment() {
+func (s *site) printRcloneEnvironment() (err error) {
 	env := map[string]string{
 		"OS_AUTH_TOKEN":  s.Auth.ScopedToken,
 		"OS_AUTH_URL":    s.Config.Endpoint,
@@ -593,8 +592,12 @@ func (s *site) printRcloneEnvironment() {
 	}
 	w := os.Stderr
 	for k, v := range env {
-		fmt.Fprintf(w, "export %s=%s\n", k, v)
+		_, err = fmt.Fprintf(w, "export %s=%s\n", k, v)
+		if err != nil {
+			return
+		}
 	}
+	return
 }
 
 func (s *site) checkSwiftEndpoint(endpoint *endpoint) (err error) {
@@ -630,7 +633,7 @@ func getSite(c *config) (s *site, err error) {
 			err = fmt.Errorf("the selected site %s provides no public swift endpoint for the selected VO %s", *argSite, c.UserAuth.VO)
 			return
 		}
-		printSelected("Site", s.String())
+		err = printSelected("Site", s.String())
 		return
 	}
 
@@ -644,7 +647,10 @@ func getSite(c *config) (s *site, err error) {
 	var siteName string
 	if siteCount == 1 {
 		siteName = sites[0]
-		printSelected("Site", siteName)
+		err = printSelected("Site", siteName)
+		if err != nil {
+			return
+		}
 	} else {
 		fmt.Printf("Found %d sites providing swift\n", siteCount)
 		siteName, err = selectString("Site", sites)
@@ -676,7 +682,10 @@ func run() (err error) {
 		return
 	}
 
-	site.printRcloneEnvironment()
+	err = site.printRcloneEnvironment()
+	if err != nil {
+		return
+	}
 
 	var rcloneRemote string
 	rcloneRemote, err = assureRcloneConfig()
