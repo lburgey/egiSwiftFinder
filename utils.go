@@ -35,7 +35,7 @@ func printSelected(kind string, choice string) (err error) {
 	if err != nil {
 		return
 	}
-	fmt.Printf("%s\n", string(buf.Bytes()))
+	fmt.Printf("%s\n", buf.String())
 	return
 }
 

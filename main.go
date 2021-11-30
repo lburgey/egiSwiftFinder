@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	defaultTimeout   = 3 * time.Second
+	defaultTimeout   = 5 * time.Second
 	defaultConfigURL = "https://raw.githubusercontent.com/tdviet/fedcloudclient/master/config/sites.yaml"
 	gocdbPublicURL   = "https://goc.egi.eu/gocdbpi/public/"
 
@@ -65,11 +65,15 @@ func (u *userInfo) getVOs() (vos []string) {
 	return
 }
 
-type config struct {
+type userAuthParams struct {
 	AccessToken string
 	Issuer      string
 	VO          string
-	Sites       []*site
+}
+
+type config struct {
+	UserAuth *userAuthParams
+	Sites    []*site
 }
 
 // site describe a site which may provide our service
@@ -229,6 +233,17 @@ func (c *config) Fetch() (err error) {
 	return
 }
 
+func newConfig() (c *config, err error) {
+	c = new(config)
+	err = c.Fetch()
+	if err != nil {
+		return
+	}
+
+	err = c.SetUserAuth()
+	return
+}
+
 func getOIDCAgentAccount() (accountName string, err error) {
 	if *argOIDCAgentAccount != "" {
 		accountName = *argOIDCAgentAccount
@@ -252,7 +267,7 @@ func getOIDCAgentAccount() (accountName string, err error) {
 	return
 }
 
-func getAT() (at string, issuer string, err error) {
+func (ua *userAuthParams) getAT() (err error) {
 	var accountName string
 	accountName, err = getOIDCAgentAccount()
 	if err != nil {
@@ -265,21 +280,21 @@ func getAT() (at string, issuer string, err error) {
 	if err != nil {
 		return
 	}
-	at = tr.Token
-	issuer = tr.Issuer
+	ua.AccessToken = tr.Token
+	ua.Issuer = tr.Issuer
 	return
 }
 
-func getUserInfo(c *config) (ui userInfo, err error) {
+func (ua *userAuthParams) getUserInfo(c *config) (ui userInfo, err error) {
 	ctx, cancel := context.WithTimeout(defaultCtx, defaultTimeout)
 	defer cancel()
 
 	var req *http.Request
-	req, err = http.NewRequestWithContext(ctx, "GET", c.Issuer+"/userinfo", nil) // TODO look this up in the well known config
+	req, err = http.NewRequestWithContext(ctx, "GET", ua.Issuer+"/userinfo", nil) // TODO look this up in the well known config
 	if err != nil {
 		return
 	}
-	req.Header.Add("Authorization", "Bearer "+c.AccessToken)
+	req.Header.Add("Authorization", "Bearer "+ua.AccessToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return
@@ -296,31 +311,36 @@ func getUserInfo(c *config) (ui userInfo, err error) {
 	return
 }
 
-func getVO(userinfo userInfo) (vo string, err error) {
+func (ua *userAuthParams) getVO(userinfo userInfo) (err error) {
 	if *argVO != "" {
-		vo = *argVO
-		printSelected("VO", vo)
+		ua.VO = *argVO
+		printSelected("VO", ua.VO)
 		return
 	}
 
 	vos := userinfo.getVOs()
-	vo, err = selectString("VO", vos)
+	ua.VO, err = selectString("VO", vos)
 	return
 }
 
 func (c *config) SetUserAuth() (err error) {
-	c.AccessToken, c.Issuer, err = getAT()
+	ua := new(userAuthParams)
+	err = ua.getAT()
 	if err != nil {
 		return
 	}
 
 	var userinfo userInfo
-	userinfo, err = getUserInfo(c)
+	userinfo, err = ua.getUserInfo(c)
 	if err != nil {
 		return
 	}
 
-	c.VO, err = getVO(userinfo)
+	err = ua.getVO(userinfo)
+	if err != nil {
+		return
+	}
+	c.UserAuth = ua
 	return
 }
 
@@ -352,7 +372,7 @@ func (c *config) GetSwiftSitesForVO() (sites []string) {
 
 	for _, s := range c.Sites {
 		go func(s *site) {
-			if s.hasAvailableSwiftEndpoint(c) {
+			if s.hasAvailableSwiftEndpoint(c.UserAuth) {
 				swiftSites <- s.Config.Name
 			}
 			wg.Done()
@@ -485,13 +505,13 @@ func (s *site) parseAuthResponse(auth *siteAuth, authResp authResponse, scopedTo
 	return
 }
 
-func (s *site) authenticate(c *config) (err error) {
+func (s *site) authenticate(ua *userAuthParams) (err error) {
 	ctx, cancel := context.WithTimeout(defaultCtx, defaultTimeout)
 	defer cancel()
 
 	// fmt.Printf("Authenticating against site %s\n", s)
 	auth := new(siteAuth)
-	auth.UnscopedToken, err = s.getUnscopedToken(ctx, c.AccessToken)
+	auth.UnscopedToken, err = s.getUnscopedToken(ctx, ua.AccessToken)
 	if err != nil {
 		return
 	}
@@ -499,7 +519,7 @@ func (s *site) authenticate(c *config) (err error) {
 		authResp    authResponse
 		scopedToken string
 	)
-	authResp, scopedToken, err = s.getScopedTokenInfo(ctx, auth, c.VO)
+	authResp, scopedToken, err = s.getScopedTokenInfo(ctx, auth, ua.VO)
 	if err != nil {
 		return
 	}
@@ -517,18 +537,18 @@ func (s *site) isAuthenticated() bool {
 	return s.Auth != nil && time.Until(*s.Auth.TokenInfo.ExpiresAt) > 0
 }
 
-func (s *site) getAuth(c *config) (auth *siteAuth, err error) {
+func (s *site) getAuth(ua *userAuthParams) (auth *siteAuth, err error) {
 	if s.isAuthenticated() {
 		auth = s.Auth
 		return
 	}
-	err = s.authenticate(c)
+	err = s.authenticate(ua)
 	auth = s.Auth
 	return
 }
 
-func (s *site) findPublicSwiftEndpoint(c *config) (ep *endpoint, err error) {
-	auth, err := s.getAuth(c)
+func (s *site) findPublicSwiftEndpoint(ua *userAuthParams) (ep *endpoint, err error) {
+	auth, err := s.getAuth(ua)
 	if err != nil {
 		return
 	}
@@ -536,23 +556,66 @@ func (s *site) findPublicSwiftEndpoint(c *config) (ep *endpoint, err error) {
 	return
 }
 
-func (s *site) hasAvailableSwiftEndpoint(c *config) bool {
+func (s *site) hasAvailableSwiftEndpoint(ua *userAuthParams) bool {
 	available := false
 	for _, siteVO := range s.Config.VOs {
-		if strings.Contains(c.VO, siteVO.Name) {
+		if strings.Contains(ua.VO, siteVO.Name) {
 			available = true
 			break
 		}
 	}
-	if available {
-		ep, err := s.findPublicSwiftEndpoint(c)
-		if err != nil {
-			printWarn("Failed to discover endpoint of site: " + s.String())
-		} else if ep != nil {
-			return true
-		}
+	if !available {
+		return false
 	}
-	return false
+
+	ep, err := s.findPublicSwiftEndpoint(ua)
+	if err != nil {
+		printWarn("Failed to discover endpoint of site: " + s.String())
+		return false
+	}
+	if ep == nil {
+		return false
+	}
+
+	err = s.checkSwiftEndpoint(ep)
+	if err != nil {
+		printWarn("Swift endpoint is not operable at site: " + s.String())
+		return false
+	}
+	return true
+}
+
+func (s *site) printRcloneEnvironment() {
+	env := map[string]string{
+		"OS_AUTH_TOKEN":  s.Auth.ScopedToken,
+		"OS_AUTH_URL":    s.Config.Endpoint,
+		"OS_STORAGE_URL": s.Auth.SwiftEndpoint.URL,
+	}
+	w := os.Stderr
+	for k, v := range env {
+		fmt.Fprintf(w, "export %s=%s\n", k, v)
+	}
+}
+
+func (s *site) checkSwiftEndpoint(endpoint *endpoint) (err error) {
+	ctx, cancel := context.WithTimeout(defaultCtx, defaultTimeout)
+	defer cancel()
+
+	storageURL := endpoint.URL
+	authToken := s.Auth.ScopedToken
+	req, err := http.NewRequestWithContext(ctx, "GET", storageURL, nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("X-Auth-Token", authToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return
+	}
+	if resp.StatusCode != http.StatusOK {
+		err = fmt.Errorf("swift check failed: %v", resp.Status)
+	}
+	return
 }
 
 func getSite(c *config) (s *site, err error) {
@@ -563,8 +626,8 @@ func getSite(c *config) (s *site, err error) {
 			err = fmt.Errorf("no site with this name found: %s", *argSite)
 			return
 		}
-		if !s.hasAvailableSwiftEndpoint(c) {
-			err = fmt.Errorf("the selected site %s provides no public swift endpoint for the selected VO %s", *argSite, c.VO)
+		if !s.hasAvailableSwiftEndpoint(c.UserAuth) {
+			err = fmt.Errorf("the selected site %s provides no public swift endpoint for the selected VO %s", *argSite, c.UserAuth.VO)
 			return
 		}
 		printSelected("Site", s.String())
@@ -597,47 +660,30 @@ func getSite(c *config) (s *site, err error) {
 }
 
 func run() (err error) {
-	c := new(config)
-	err = c.Fetch()
-	if err != nil {
-		return
-	}
-
-	err = c.SetUserAuth()
+	config, err := newConfig()
 	if err != nil {
 		return
 	}
 
 	fmt.Printf("Searching sites providing swift for this VO\n")
-	var site *site
-	site, err = getSite(c)
+	site, err := getSite(config)
 	if err != nil {
 		return
 	}
 
-	endP, err := site.findPublicSwiftEndpoint(c)
+	_, err = site.findPublicSwiftEndpoint(config.UserAuth)
 	if err != nil {
 		return
 	}
 
-	env := map[string]string{
-		"OS_AUTH_TOKEN":  site.Auth.ScopedToken,
-		"OS_AUTH_URL":    site.Config.Endpoint,
-		"OS_STORAGE_URL": endP.URL,
-	}
-	w := os.Stderr
-	for k, v := range env {
-		fmt.Fprintf(w, "export %s=%s\n", k, v)
-	}
+	site.printRcloneEnvironment()
 
 	var rcloneRemote string
 	rcloneRemote, err = assureRcloneConfig()
 	if err != nil {
 		return
 	}
-	fmt.Printf("\nYou can now use the rclone remote %s like so:\n\trclone lsd %s:\n", rcloneRemote, rcloneRemote)
-
-	// fmt.Printf("Available swift endpoint: %s\n", endP.URL)
+	fmt.Printf("\nYou can now use the rclone remote %s like so:\n\t'rclone lsd %s:'\n", rcloneRemote, rcloneRemote)
 	return
 }
 
@@ -646,7 +692,7 @@ func registerInterruptHandler() {
 	signal.Notify(intChan, os.Interrupt)
 	go func() {
 		<-intChan
-		fmt.Printf("Exiting on user interrupt")
+		fmt.Printf("\nExiting on user interrupt")
 		defCancel()
 		os.Exit(0)
 	}()
@@ -657,6 +703,6 @@ func main() {
 	kingpin.Parse()
 	err := run()
 	if err != nil {
-		fmt.Printf("Error: %s\n", err)
+		printError("Error: " + err.Error())
 	}
 }

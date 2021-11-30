@@ -29,14 +29,25 @@ func TestRun(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-var benchmarkConfigResult *config
+func TestCheckSwift(t *testing.T) {
+	*argOIDCAgentAccount = os.Getenv("OIDC_AGENT_ACCOUNT")
+	*argSite = os.Getenv("EGI_SITE")
+	*argVO = os.Getenv("EGI_VO")
 
-func BenchmarkConfig(b *testing.B) {
-	c := new(config)
-	for i := 0; i < b.N; i++ {
-		c.Fetch()
-	}
-	benchmarkConfigResult = c
+	config, err := newConfig()
+	assert.Nil(t, err)
+	assert.NotNil(t, config)
+
+	site, err := getSite(config)
+	assert.Nil(t, err)
+	assert.NotNil(t, site)
+
+	endpoint, err := site.findPublicSwiftEndpoint(config.UserAuth)
+	assert.Nil(t, err)
+	assert.NotNil(t, endpoint)
+
+	err = site.checkSwiftEndpoint(endpoint)
+	assert.Nil(t, err)
 }
 
 func TestAssureRloneConfig(t *testing.T) {
