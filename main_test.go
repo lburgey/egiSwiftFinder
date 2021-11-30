@@ -11,7 +11,7 @@ func TestVOFromEntilements(t *testing.T) {
 	assert.Equal(t, "eosc-synergy.eu", voFromEntitlement("urn:mace:egi.eu:group:eosc-synergy.eu:role=member#aai.egi.eu"))
 	assert.Equal(t, "eosc-synergy.eu", voFromEntitlement("urn:mace:egi.eu:group:eosc-synergy.eu#aai.egi.eu"))
 	assert.Equal(t, "eosc-synergy.eu", voFromEntitlement("urn:mace:egi.eu:group:eosc-synergy.eu:role=member"))
-	assert.Equal(t, "eosc-synergy.eu:admins", voFromEntitlement("urn:mace:egi.eu:group:eosc-synergy.eu:admins:role=owner#aai.egi.eu"))
+	assert.Equal(t, "eosc-synergy.eu", voFromEntitlement("urn:mace:egi.eu:group:eosc-synergy.eu:admins:role=owner#aai.egi.eu"))
 }
 
 func TestConfig(t *testing.T) {

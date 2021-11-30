@@ -38,7 +38,7 @@ var (
 	argSite               = kingpin.Flag("site", "Site").Short('s').Envar("EGI_SITE").String()
 
 	// voRegex is used for extracting the group part from entitlements.
-	voRegex = regexp.MustCompile("^(?:.+group:)(?P<vo>.+?)(?:(?::role=)|#)|$")
+	voRegex = regexp.MustCompile("^(?:.+group:)(?P<vo>.+?)(?:(?:(?::admin)|:role=)|#)|$")
 )
 
 type userInfo struct {
