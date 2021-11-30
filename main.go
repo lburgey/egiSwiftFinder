@@ -30,6 +30,8 @@ const (
 )
 
 var (
+	// version is set via: go build -ldflags '-X main.version=foobar'
+	version               = ""
 	rcloneConfigFile      = xdg.ConfigHome + "/rclone/rclone.conf"
 	defaultCtx, defCancel = context.WithCancel(context.Background())
 	argOIDCAgentAccount   = kingpin.Flag("oidc-agent", "oidc-agent account shortname").Short('o').Envar("OIDC_AGENT_ACCOUNT").String()
@@ -709,7 +711,11 @@ func registerInterruptHandler() {
 
 func main() {
 	registerInterruptHandler()
+	if version != "" {
+		kingpin.Version(version)
+	}
 	kingpin.Parse()
+
 	err := run()
 	if err != nil {
 		printError("Error: " + err.Error())

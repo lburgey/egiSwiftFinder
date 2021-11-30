@@ -8,7 +8,8 @@ MAC_OS=darwin
 ARCH=amd64
 
 $(BIN): $(BIN_DIR)
-	GOOS=$(LINUX_OS) GOARCH=$(ARCH) go build -v -o $(BIN)
+	GOOS=$(LINUX_OS) GOARCH=$(ARCH) \
+		 go build -v -o $(BIN) -ldflags '-X main.version=$(shell git describe --tags)'
 
 $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
