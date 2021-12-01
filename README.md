@@ -11,9 +11,24 @@ First download the latest release tarball from [here](https://github.com/lburgey
 
 ```bash
 # Unpack the tarball contents somewhere your $PATH picks them up
-tar xaf egiSwiftFinder-linux-amd64.tar.gz
+tar xaf egiSwiftFinder-<linux|darwin>-amd64.tar.gz
 
 # Execute and follow the instructions
 # This will configure rclone and determine a VO and Site to use.
 source swift_finder
+```
+
+If you want want to repeatedly use the same swift endpoint, you can set defaults using environment variables:
+```bash
+export OIDC_AGENT_ACCOUNT=<account shortname>
+export EGI_SITE=<site name>
+export EGI_VO=<vo name>
+
+# this call should not prompt you
+source swift_finder
+```
+
+In addition flags can be passed to the tool, see:
+```bash
+source swift_finder --help
 ```
