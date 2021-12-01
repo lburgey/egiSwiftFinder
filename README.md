@@ -28,7 +28,14 @@ export EGI_VO=<vo name>
 source swift_finder
 ```
 
-In addition flags can be passed to the tool, see:
+Alternatively, flags can be passed to the tool. See the help:
 ```bash
 source swift_finder --help
 ```
+
+## How does all of this work?
+rclone is configured to read parameters regarding the swift endpoint from environment variables.
+The relevant variables are: `OS_STORAGE_URL`, `OS_AUTH_URL` and `OS_AUTH_TOKEN`.
+
+By using `source` to call the swift finder, the environment variables are applied to the current shells environment.
+Subsequent calls to rclone in the same shell can then use the environment variables.
