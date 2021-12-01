@@ -29,17 +29,20 @@ func registerInterruptHandler() {
 func main() {
 	registerInterruptHandler()
 
-	if version != "" {
-		kingpin.Version(version)
-	}
-
 	var (
-		argOIDCAgentAccount = kingpin.Flag("oidc-agent", "oidc-agent account shortname").Short('o').Envar("OIDC_AGENT_ACCOUNT").String()
-		argVO               = kingpin.Flag("vo", "Virtual organisation").Short('v').Envar("EGI_VO").String()
-		argSite             = kingpin.Flag("site", "Site").Short('s').Envar("EGI_SITE").String()
+		app                 = kingpin.New("source swift_finder", "A tool for discovering and using Openstack Swift endpoints provided by the EGI infrastructure.")
+		argOIDCAgentAccount = app.Flag("oidc-agent", "oidc-agent account shortname").Short('o').Envar("OIDC_AGENT_ACCOUNT").String()
+		argVO               = app.Flag("vo", "Virtual organisation").Short('v').Envar("EGI_VO").String()
+		argSite             = app.Flag("site", "Site").Short('s').Envar("EGI_SITE").String()
 	)
 
-	kingpin.Parse()
+	app.UsageWriter(os.Stdout)
+
+	if version != "" {
+		app.Version(version)
+	}
+
+	kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	args := internal.Args{
 		VO:               *argVO,
