@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 # forward stdout to the user and eval stderr
 exec 3>&1
-echo $( { egiSwiftFinder $@ 1>&3; } 2>&1 )
+eval $( { egiSwiftFinder $@ 1>&3; } 2>&1 )
