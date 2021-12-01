@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 
@@ -20,7 +19,7 @@ func registerInterruptHandler() {
 
 	go func() {
 		<-intChan
-		fmt.Printf("\nExiting on user interrupt")
+		utils.Print(utils.Warn, "Exiting on user interrupt")
 		internal.Cancel()
 		os.Exit(0)
 	}()
@@ -52,6 +51,6 @@ func main() {
 
 	err := internal.Run(&args)
 	if err != nil {
-		utils.PrintError("Error: " + err.Error())
+		utils.Print(utils.Bad, "Error: %s", err.Error())
 	}
 }

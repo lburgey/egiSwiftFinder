@@ -247,7 +247,7 @@ func (c *config) Fetch() (err error) {
 			if err == nil {
 				c.Sites[i].Config = config
 			} else {
-				fmt.Printf("Failed to fetch config from %s\n", path)
+				utils.Print(utils.Bad, "Failed to fetch config from %s", path)
 			}
 
 			waitgroup.Done()
@@ -591,7 +591,6 @@ func (s *site) authenticate(userAuth *userAuthParams) (err error) {
 	ctx, cancel := context.WithTimeout(Ctx, defaultTimeout)
 	defer cancel()
 
-	// fmt.Printf("Authenticating against site %s\n", s)
 	auth := new(siteAuth)
 
 	auth.UnscopedToken, err = s.getUnscopedToken(ctx, userAuth)
@@ -664,7 +663,7 @@ func (s *site) hasAvailableSwiftEndpoint(userAuth *userAuthParams) bool {
 
 	endpoint, err := s.findPublicSwiftEndpoint(userAuth)
 	if err != nil {
-		utils.PrintWarn("Failed to discover endpoint of site: " + s.String())
+		utils.Print(utils.Warn, "Failed to discover endpoint of site: %s", s)
 
 		return false
 	} else if endpoint == nil {
@@ -673,7 +672,7 @@ func (s *site) hasAvailableSwiftEndpoint(userAuth *userAuthParams) bool {
 
 	err = s.checkSwiftEndpoint(endpoint)
 	if err != nil {
-		utils.PrintWarn("Swift endpoint is not operable at site: " + s.String())
+		utils.Print(utils.Warn, "Swift endpoint is not operable at site: %s", s)
 
 		return false
 	}
@@ -765,7 +764,7 @@ func getSite(args *Args, conf *config) (s *site, err error) {
 			return
 		}
 	} else {
-		fmt.Printf("  Found %d sites providing swift\n", siteCount)
+		utils.Print(utils.Good, "Found %d sites providing swift", siteCount)
 		siteName, err = utils.SelectString("Site", sites)
 		if err != nil {
 			return
@@ -793,7 +792,7 @@ func Run(args *Args) (err error) {
 		return
 	}
 
-	fmt.Printf("  Searching sites providing swift for this VO\n")
+	utils.Print(utils.None, "Searching sites providing swift for this VO")
 
 	site, err := getSite(args, config)
 	if err != nil {
@@ -820,11 +819,10 @@ func Run(args *Args) (err error) {
 	expiresAt := *site.Auth.TokenInfo.ExpiresAt
 	if !expiresAt.IsZero() {
 		timeToTokenExpiry := time.Until(expiresAt).Truncate(time.Second)
-		utils.PrintWarn(fmt.Sprintf("Token expires in: %s", timeToTokenExpiry))
-		fmt.Print("\tYou have to rerun this tool after the token expired.")
+		utils.Print(utils.Warn, "Token expires in: %s\n\tYou have to rerun this tool after the token expired.", timeToTokenExpiry)
 	}
 
-	fmt.Printf("\n%s You can now use the rclone remote %s using e.g.:\n\t'rclone lsd %s:'\n", utils.IconGood, rcloneRemote, rcloneRemote)
+	utils.Print(utils.Good, "You can now use the rclone remote '%s' using e.g.:\n\t'rclone lsd %s:'\n", rcloneRemote, rcloneRemote)
 
 	return err
 }

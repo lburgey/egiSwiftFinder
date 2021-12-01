@@ -9,22 +9,42 @@ import (
 	"github.com/manifoldco/promptui"
 )
 
+type MessageType int
+
+const (
+	None MessageType = iota
+	Good MessageType = iota
+	Warn MessageType = iota
+	Bad  MessageType = iota
+)
+
 var (
 	IconGood = promptui.IconGood
 	IconWarn = promptui.IconWarn
 	IconBad  = promptui.IconBad
 )
 
+func getIcon(mt MessageType) (icon string) {
+	if mt == Good {
+		icon = promptui.IconGood
+	} else if mt == Warn {
+		icon = promptui.IconWarn
+	} else if mt == Bad {
+		icon = promptui.IconBad
+	} else {
+		icon = " "
+	}
+
+	return
+}
+
+func Print(mt MessageType, format string, a ...interface{}) {
+	format = fmt.Sprintf("%s %s\n", getIcon(mt), format)
+	fmt.Printf(format, a...)
+}
+
 func templateForSelected(kind string) string {
 	return fmt.Sprintf(`%s %s: {{ . | bold }}`, IconGood, kind)
-}
-
-func PrintWarn(errString string) {
-	fmt.Printf("%s %s\n", IconWarn, errString)
-}
-
-func PrintError(errString string) {
-	fmt.Printf("%s %s\n", IconBad, errString)
 }
 
 // printSelected prints in the same style as if we made a choice using selectString
