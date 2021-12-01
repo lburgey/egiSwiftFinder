@@ -765,7 +765,7 @@ func getSite(args *Args, conf *config) (s *site, err error) {
 			return
 		}
 	} else {
-		fmt.Printf("Found %d sites providing swift\n", siteCount)
+		fmt.Printf("  Found %d sites providing swift\n", siteCount)
 		siteName, err = utils.SelectString("Site", sites)
 		if err != nil {
 			return
@@ -793,7 +793,7 @@ func Run(args *Args) (err error) {
 		return
 	}
 
-	fmt.Printf("Searching sites providing swift for this VO\n")
+	fmt.Printf("  Searching sites providing swift for this VO\n")
 
 	site, err := getSite(args, config)
 	if err != nil {
@@ -817,7 +817,14 @@ func Run(args *Args) (err error) {
 		return
 	}
 
-	fmt.Printf("\nYou can now use the rclone remote %s like so:\n\t'rclone lsd %s:'\n", rcloneRemote, rcloneRemote)
+	expiresAt := *site.Auth.TokenInfo.ExpiresAt
+	if !expiresAt.IsZero() {
+		timeToTokenExpiry := time.Until(expiresAt).Truncate(time.Second)
+		utils.PrintWarn(fmt.Sprintf("Token expires in: %s", timeToTokenExpiry))
+		fmt.Print("\tYou have to rerun this tool after the token expired.")
+	}
+
+	fmt.Printf("\n%s You can now use the rclone remote %s using e.g.:\n\t'rclone lsd %s:'\n", utils.IconGood, rcloneRemote, rcloneRemote)
 
 	return err
 }
