@@ -27,8 +27,10 @@ export EGI_VO=<vo name>
 # this call should not prompt you
 source swift_finder
 ```
+**Note:** It will be useful to copy swift_finder to a location in your
+`$PATH`.
 
-Alternatively, flags can be passed to the tool. See the help:
+Flags can be passed to the tool. See the help:
 ```bash
 source swift_finder --help
 ```
